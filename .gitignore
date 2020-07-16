@@ -34,3 +34,6 @@ MDK_ARM/fromelf.txt
 MDK_ARMv5/fromelf.txt
 *.iex
 *.scvd
+MDK_ARMv5/Project_52352.uvguix.Harrison Wu
+system_ht32f5xxxx_06.c
+system_ht32f5xxxx_05.c
