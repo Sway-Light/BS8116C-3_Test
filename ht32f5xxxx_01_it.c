@@ -110,6 +110,9 @@ void SysTick_Handler(void)
 {
 }
 
+void GPTM0_IRQHandler(void) {
+	TM_ClearFlag(HT_GPTM0, TM_FLAG_UEV);
+}
 
 /**
   * @}

@@ -69,6 +69,18 @@ typedef union
   u16 Data;
 } TouchKey_TypeDef;
 
+typedef enum {
+	zoom = 3,
+	slide = 2,
+	press = 1,
+	none = 0
+}TOUCHKEY_STATUS;
+
+
+TM_TimeBaseInitTypeDef TimeBaseInit;
+TOUCHKEY_STATUS status;
+
+
 /* Private constants ---------------------------------------------------------------------------------------*/
 #define I2C_TOUCHKEY_SPEED         (50000)          /*!< I2C speed                                          */
 #define I2C_TOUCHKEY_DEV_ADDR      (0x50)           /*!< I2C device address                                 */
@@ -77,6 +89,8 @@ typedef union
 /* Private function prototypes -----------------------------------------------------------------------------*/
 void NVIC_Configuration(void);
 void CKCU_Configuration(void);
+void GPTM0_Configuration(void);
+void GPTM0_IRQHandler(void);
 void GPIO_Configuration(void);
 void I2C_Configuration(void);
 u32 Touchkey_ButtonRead(void);
@@ -90,10 +104,13 @@ void _I2C_Touchkey_AckPolling(void);
 int main(void)
 {
   u32 uCounter;
+	u8 slideValue = 0;
+	u8 zoomValue = 0;
   TouchKey_TypeDef Touch;
 
   NVIC_Configuration();               /* NVIC configuration                                                 */
   CKCU_Configuration();               /* System Related configuration                                       */
+	GPTM0_Configuration();
   GPIO_Configuration();               /* GPIO Related configuration                                         */
   RETARGET_Configuration();           /* Retarget Related configuration                                     */
 
@@ -103,29 +120,35 @@ int main(void)
 
   while (1)
   {
-		printf("test");
-    Touch.Data = Touchkey_ButtonRead();
-    printf("\rPADS: %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d, DATA=%04x",
-           Touch.Bit.Key1,
-           Touch.Bit.Key2,
-           Touch.Bit.Key3,
-           Touch.Bit.Key4,
-           Touch.Bit.Key5,
-           Touch.Bit.Key6,
-           Touch.Bit.Key7,
-           Touch.Bit.Key8,
-					 Touch.Bit.Key9,
-					 Touch.Bit.Key10,
-					 Touch.Bit.Key11,
-           Touch.Bit.Key12,
-           Touch.Bit.Key13,
-           Touch.Bit.Key14,
-           Touch.Bit.Key15,
-           Touch.Bit.Key16,
-           Touch.Data);
-
-    uCounter = (HSE_VALUE >> 4);
-    while (uCounter--);
+		if(!GPIO_ReadInBit(HT_GPIOC, GPIO_PIN_0)) {
+			status = press;
+			Touch.Data = Touchkey_ButtonRead();
+			printf("\r%d, PADS: %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d, DATA=%04x, slide=%3d, zoom=%3d",
+				status,
+				Touch.Bit.Key1,
+				Touch.Bit.Key2,
+				Touch.Bit.Key3,
+				Touch.Bit.Key4,
+				Touch.Bit.Key5,
+				Touch.Bit.Key6,
+				Touch.Bit.Key7,
+				Touch.Bit.Key8,
+				Touch.Bit.Key9,
+				Touch.Bit.Key10,
+				Touch.Bit.Key11,
+				Touch.Bit.Key12,
+				Touch.Bit.Key13,
+				Touch.Bit.Key14,
+				Touch.Bit.Key15,
+				Touch.Bit.Key16,
+				Touch.Data,
+				slideValue,
+				zoomValue);
+			uCounter = (HSE_VALUE >> 4);
+			while (uCounter--);
+		}else {
+			status = none;
+		}
   }
 }
 
@@ -200,6 +223,7 @@ void _I2C_Touchkey_AckPolling(void)
 void NVIC_Configuration(void)
 {
   NVIC_SetVectorTable(NVIC_VECTTABLE_FLASH, 0x0);     /* Set the Vector Table base location at 0x00000000   */
+	NVIC_EnableIRQ(GPTM0_IRQn);
 }
 
 /*********************************************************************************************************//**
@@ -250,10 +274,10 @@ void CKCU_Configuration(void)
   CKCUClock.Bit.CKREF      = 0;
   CKCUClock.Bit.EBI        = 0;
   CKCUClock.Bit.CRC        = 0;
-  CKCUClock.Bit.PA         = 0;
-  CKCUClock.Bit.PB         = 0;
-  CKCUClock.Bit.PC         = 0;
-  CKCUClock.Bit.PD         = 0;
+  CKCUClock.Bit.PA         = 1;
+  CKCUClock.Bit.PB         = 1;
+  CKCUClock.Bit.PC         = 1;
+  CKCUClock.Bit.PD         = 1;
   CKCUClock.Bit.I2C0       = 0;
   CKCUClock.Bit.I2C1       = 0;
   CKCUClock.Bit.SPI0       = 0;
@@ -270,8 +294,8 @@ void CKCU_Configuration(void)
   CKCUClock.Bit.MCTM0      = 0;
   CKCUClock.Bit.WDT        = 0;
   CKCUClock.Bit.BKP        = 0;
-  CKCUClock.Bit.GPTM0      = 0;
-  CKCUClock.Bit.GPTM1      = 0;
+  CKCUClock.Bit.GPTM0      = 1;
+  CKCUClock.Bit.GPTM1      = 1;
   CKCUClock.Bit.BFTM0      = 0;
   CKCUClock.Bit.BFTM1      = 0;
   CKCUClock.Bit.CMP        = 0;
@@ -307,12 +331,26 @@ void CKOUTConfig(void)
 }
 #endif
 
+void GPTM0_Configuration(void) {
+	TM_TimeBaseStructInit(&TimeBaseInit);                       // Init GPTM1 time-base
+	TimeBaseInit.CounterMode = TM_CNT_MODE_UP;                  // up count mode
+	TimeBaseInit.CounterReload = 36000;            				      // interrupt in every 500us
+	TimeBaseInit.Prescaler = 0;
+	TimeBaseInit.PSCReloadTime = TM_PSC_RLD_IMMEDIATE;          // reload immediately
+	TM_TimeBaseInit(HT_GPTM0, &TimeBaseInit);                   // write the parameters into GPTM1
+	TM_ClearFlag(HT_GPTM0, TM_FLAG_UEV);                        // Clear Update Event Interrupt flag
+	TM_IntConfig(HT_GPTM0, TM_INT_UEV, ENABLE);                 // interrupt by GPTM update
+	TM_Cmd(HT_GPTM0, ENABLE);                                   // enable the counter 1
+}
+
 /*********************************************************************************************************//**
   * @brief  Configure the GPIO ports.
   * @retval None
   ***********************************************************************************************************/
 void GPIO_Configuration(void)
 {
+	GPIO_DirectionConfig(HT_GPIOC, GPIO_PIN_0,  GPIO_DIR_IN);
+	GPIO_InputConfig(HT_GPIOC, GPIO_PIN_0, ENABLE);
 #if (RETARGET_PORT == RETARGET_USART0)
   AFIO_GPxConfig(GPIO_PA, AFIO_PIN_2 | AFIO_PIN_3, AFIO_FUN_USART_UART);
 #endif
