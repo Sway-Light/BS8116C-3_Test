@@ -83,7 +83,6 @@ bool TK_CHECK = FALSE, TK_1SEC = FALSE;
 u8 TK_L = 0, TK_R = 0;
 u16 TK_COUNT = 0;
 
-
 /* Private constants ---------------------------------------------------------------------------------------*/
 #define I2C_TOUCHKEY_SPEED         (50000)          /*!< I2C speed                                          */
 #define I2C_TOUCHKEY_DEV_ADDR      (0x50)           /*!< I2C device address                                 */
@@ -99,6 +98,8 @@ void I2C_Configuration(void);
 u32 Touchkey_ButtonRead(void);
 void _I2C_Touchkey_AckPolling(void);
 void get_TKLR(void);
+void Slide(u32, u32, u8*);
+void Zoom(u32, u32, u8*);
 
 /* Global functions ----------------------------------------------------------------------------------------*/
 /*********************************************************************************************************//**
@@ -122,11 +123,12 @@ int main(void) {
 
 	while (1) {
 		if (!GPIO_ReadInBit(HT_GPIOC, GPIO_PIN_0)) {
-			if (TK_1SEC == TRUE) TK_CHECK = TRUE;
-			else TK_CHECK = FALSE;
+			TK_CHECK = TRUE;
+//			if (TK_1SEC == TRUE) TK_CHECK = TRUE;
+//			else TK_CHECK = FALSE;
 			Touch.Data = Touchkey_ButtonRead();
 			get_TKLR();
-			printf("\r%d, PADS: %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d, DATA=%04x, slide=%3d, zoom=%3d TK_CHECK = %2d, TK_1SEC = %2d",
+			printf("\r%d, PADS: %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d, DATA = %04x, slideValue = %3d, zoomValue = %3d",
 				status,
 				Touch.Bit.Key1,  Touch.Bit.Key2,  Touch.Bit.Key3,  Touch.Bit.Key4,
 				Touch.Bit.Key5,  Touch.Bit.Key6,  Touch.Bit.Key7,  Touch.Bit.Key8,
@@ -134,10 +136,10 @@ int main(void) {
 				Touch.Bit.Key13, Touch.Bit.Key14, Touch.Bit.Key15, Touch.Bit.Key16,
 				Touch.Data,
 				slideValue,
-				zoomValue,
-				TK_CHECK,
-				TK_1SEC
+				zoomValue
 			);
+			if (status == slide) Slide(TK_L, TK_R, &slideValue);
+			else if (status == zoom) Zoom(TK_L, TK_R, &zoomValue);
 			uCounter = (HSE_VALUE >> 4);
 			while (uCounter--);
 		} else {
@@ -353,11 +355,43 @@ void GPTM0_IRQHandler(void) {
 		
 	}
 	if (TK_1SEC && status != none) {
-		if (TK_COUNT >= (2 * 1000)) {
+		if (TK_COUNT >= (2 * 500)) {
 			TK_1SEC = FALSE;
 		} else {
 			TK_COUNT += 1;
 		}
+	}
+}
+
+void Slide(u32 L, u32 R, u8 *Value) {
+	static u32 prevL = 0, prevR = 0;
+	
+	if (L != prevL || R != prevR) {
+		if (L < prevL || R < prevR) {
+			if (*Value <= 0) *Value = 0;
+			else (*Value) -= 1;
+		} else if (L > prevL || R > prevR) {
+			if (*Value >= 100) *Value = 100;
+			else (*Value) += 1;
+		}
+		prevL = L;
+		prevR = R;
+	}
+}
+
+void Zoom(u32 L, u32 R, u8* Value) {
+	static u32 prevL = 0, prevR = 0;
+	
+	if (L != prevL || R != prevR) {
+		if (L > prevL || R < prevR) {
+			if (*Value <= 0) *Value = 0;
+			else (*Value) -= 1;
+		} else if (L < prevL || R > prevR) {
+			if (*Value >= 32) *Value = 32;
+			else (*Value) += 1;
+		}
+		prevL = L;
+		prevR = R;
 	}
 }
 
