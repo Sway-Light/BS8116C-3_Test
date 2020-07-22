@@ -29,7 +29,7 @@
 /* Includes ------------------------------------------------------------------------------------------------*/
 #include "ht32.h"
 #include "ht32_board.h"
-#include "ht32_board_config.h"
+#include "ws2812.h"
 
 /** @addtogroup HT32_Series_Peripheral_Examples HT32 Peripheral Examples
   * @{
@@ -47,41 +47,36 @@
 /* Private types -------------------------------------------------------------------------------------------*/
 typedef union {
 	struct {
-		unsigned long Key1     :1;
-		unsigned long Key2     :1;
-		unsigned long Key3     :1;
-		unsigned long Key4     :1;
-		unsigned long Key5     :1;
-		unsigned long Key6     :1;
-		unsigned long Key7     :1;
-		unsigned long Key8     :1;
-		unsigned long Key9     :1;
-		unsigned long Key10    :1;
-		unsigned long Key11    :1;
-		unsigned long Key12    :1;
-		unsigned long Key13    :1;
-		unsigned long Key14    :1;
-		unsigned long Key15    :1;
-		unsigned long Key16    :1;
+		unsigned long Key1:  1;
+		unsigned long Key2:  1;
+		unsigned long Key3:  1;
+		unsigned long Key4:  1;
+		unsigned long Key5:  1;
+		unsigned long Key6:  1;
+		unsigned long Key7:  1;
+		unsigned long Key8:  1;
+		unsigned long Key9:  1;
+		unsigned long Key10: 1;
+		unsigned long Key11: 1;
+		unsigned long Key12: 1;
+		unsigned long Key13: 1;
+		unsigned long Key14: 1;
+		unsigned long Key15: 1;
+		unsigned long Key16: 1;
 	} Bit;
 	u16 Data;
 } TouchKey_TypeDef;
 
-typedef enum {
-	zoom = 3,
-	slide = 2,
-	press = 1,
-	none = 0
-} TOUCHKEY_STATUS;
+const u8 zoom = 3, slide = 2, press = 1, none = 0;
+u8 ws_white[3] = {255, 255, 255}, ws_clean[3] = {0, 0, 0};
 
-
-TM_TimeBaseInitTypeDef TimeBaseInit;
-TOUCHKEY_STATUS status = none;
+u8 status = none;
 TouchKey_TypeDef Touch;
 
 bool TK_CHECK = FALSE, TK_1SEC = FALSE;
 u8 TK_L = 0, TK_R = 0;
-u16 TK_COUNT = 0;
+u16 TK_COUNT = 0, i = 0;
+s8 color_n;
 
 /* Private constants ---------------------------------------------------------------------------------------*/
 #define I2C_TOUCHKEY_SPEED         (50000)          /*!< I2C speed                                          */
@@ -91,8 +86,7 @@ u16 TK_COUNT = 0;
 /* Private function prototypes -----------------------------------------------------------------------------*/
 void NVIC_Configuration(void);
 void CKCU_Configuration(void);
-void GPTM0_Configuration(void);
-void GPTM0_IRQHandler(void);
+void GPTM1_Configuration(void);
 void GPIO_Configuration(void);
 void I2C_Configuration(void);
 u32 Touchkey_ButtonRead(void);
@@ -108,24 +102,31 @@ void Zoom(u32, u32, u8*);
   ***********************************************************************************************************/
 int main(void) {
 	u32 uCounter;
-	u8 slideValue = 0;
-	u8 zoomValue = 0;
+	u8 slideValue = 24;
+	u8 zoomValue = 2;
 
 	NVIC_Configuration();               /* NVIC configuration                                                 */
 	CKCU_Configuration();               /* System Related configuration                                       */
-	GPTM0_Configuration();
+	GPTM1_Configuration();
 	GPIO_Configuration();               /* GPIO Related configuration                                         */
 	RETARGET_Configuration();           /* Retarget Related configuration                                     */
 
 	I2C_Configuration();                /* I2C configuration                                                  */
+	
+	wsInit();
 
 	printf("\r\nTouchkey test start....\r\n");
 
+	wsBlinkAll(300);
+	
+	for (color_n = 0; color_n < 8; color_n += 1) {
+		if (color_n == 3 || color_n == 4) wsSetColor(color_n, ws_white, ((float)slideValue) / 100.0);
+		else wsSetColor(color_n, ws_clean, ((float)slideValue) / 100.0);
+	}
+	
 	while (1) {
 		if (!GPIO_ReadInBit(HT_GPIOC, GPIO_PIN_0)) {
 			TK_CHECK = TRUE;
-//			if (TK_1SEC == TRUE) TK_CHECK = TRUE;
-//			else TK_CHECK = FALSE;
 			Touch.Data = Touchkey_ButtonRead();
 			get_TKLR();
 			printf("\r%d, PADS: %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d, DATA = %04x, slideValue = %3d, zoomValue = %3d",
@@ -140,6 +141,21 @@ int main(void) {
 			);
 			if (status == slide) Slide(TK_L, TK_R, &slideValue);
 			else if (status == zoom) Zoom(TK_L, TK_R, &zoomValue);
+			for (color_n = 0; color_n < 8; color_n += 1) {
+				if (zoomValue <= 2) {
+					if (color_n >= 3 && color_n <= 4) wsSetColor(color_n, ws_white, ((float)slideValue) / 100.0);
+					else wsSetColor(color_n, ws_clean, ((float)slideValue) / 100.0);
+				} else if (zoomValue <= 4) {
+					if (color_n >= 2 && color_n <= 5) wsSetColor(color_n, ws_white, ((float)slideValue) / 100.0);
+					else wsSetColor(color_n, ws_clean, ((float)slideValue) / 100.0);
+				} else if (zoomValue <= 6) {
+					if (color_n >= 1 && color_n <= 6) wsSetColor(color_n, ws_white, ((float)slideValue) / 100.0);
+					else wsSetColor(color_n, ws_clean, ((float)slideValue) / 100.0);
+				} else if (zoomValue <= 8) {
+					if (color_n >= 0 && color_n <= 7) wsSetColor(color_n, ws_white, ((float)slideValue) / 100.0);
+					else wsSetColor(color_n, ws_clean, ((float)slideValue) / 100.0);
+				}
+			}
 			uCounter = (HSE_VALUE >> 4);
 			while (uCounter--);
 		} else {
@@ -151,10 +167,6 @@ int main(void) {
 	}
 }
 
-/*********************************************************************************************************//**
-  * @brief  Configure the NVIC vector table.
-  * @retval None
-  ***********************************************************************************************************/
 u32 Touchkey_ButtonRead(void) {
 	u32 uData;
 
@@ -214,8 +226,8 @@ void _I2C_Touchkey_AckPolling(void) {
   * @retval None
   ***********************************************************************************************************/
 void NVIC_Configuration(void) {
-	NVIC_SetVectorTable(NVIC_VECTTABLE_FLASH, 0x0);     /* Set the Vector Table base location at 0x00000000   */
-	NVIC_EnableIRQ(GPTM0_IRQn);
+	NVIC_SetVectorTable(NVIC_VECTTABLE_FLASH, 0x0);     /* Set the Vector Table base location at 0x00000000 */
+	NVIC_EnableIRQ(GPTM1_IRQn);
 }
 
 /*********************************************************************************************************//**
@@ -225,18 +237,11 @@ void NVIC_Configuration(void) {
 void CKCU_Configuration(void) {
 #if 1
 	CKCU_PeripClockConfig_TypeDef CKCUClock = {{ 0 }};
-	CKCUClock.Bit.PA         = 1;
-	CKCUClock.Bit.PB         = 1;
-	CKCUClock.Bit.PC         = 1;
-	CKCUClock.Bit.PD         = 1;
-	CKCUClock.Bit.I2C1       = 1;
 	CKCUClock.Bit.USART0     = 1;
 	CKCUClock.Bit.USART1     = 1;
 	CKCUClock.Bit.UART0      = 1;
 	CKCUClock.Bit.UART1      = 1;
 	CKCUClock.Bit.AFIO       = 1;
-	CKCUClock.Bit.GPTM0      = 1;
-	CKCUClock.Bit.GPTM1      = 1;
 	CKCU_PeripClockConfig(CKCUClock, ENABLE);
 #endif
 
@@ -260,16 +265,23 @@ void CKOUTConfig(void)
 }
 #endif
 
-void GPTM0_Configuration(void) {
+void GPTM1_Configuration(void) {
+	TM_TimeBaseInitTypeDef TimeBaseInit;
+	{ /* Enable peripheral clock                                                                              */
+		CKCU_PeripClockConfig_TypeDef CKCUClock = {{ 0 }};
+		CKCUClock.Bit.GPTM1 = 1;
+		CKCU_PeripClockConfig(CKCUClock, ENABLE);
+	}
+	
 	TM_TimeBaseStructInit(&TimeBaseInit);                       // Init GPTM1 time-base
 	TimeBaseInit.CounterMode = TM_CNT_MODE_UP;                  // up count mode
 	TimeBaseInit.CounterReload = 36000;            				// interrupt in every 500us
 	TimeBaseInit.Prescaler = 0;
 	TimeBaseInit.PSCReloadTime = TM_PSC_RLD_IMMEDIATE;          // reload immediately
-	TM_TimeBaseInit(HT_GPTM0, &TimeBaseInit);                   // write the parameters into GPTM1
-	TM_ClearFlag(HT_GPTM0, TM_FLAG_UEV);                        // Clear Update Event Interrupt flag
-	TM_IntConfig(HT_GPTM0, TM_INT_UEV, ENABLE);                 // interrupt by GPTM update
-	TM_Cmd(HT_GPTM0, ENABLE);                                   // enable the counter 1
+	TM_TimeBaseInit(HT_GPTM1, &TimeBaseInit);                   // write the parameters into GPTM1
+	TM_ClearFlag(HT_GPTM1, TM_FLAG_UEV);                        // Clear Update Event Interrupt flag
+	TM_IntConfig(HT_GPTM1, TM_INT_UEV, ENABLE);                 // interrupt by GPTM update
+	TM_Cmd(HT_GPTM1, ENABLE);                                   // enable the counter 1
 }
 
 /*********************************************************************************************************//**
@@ -277,8 +289,16 @@ void GPTM0_Configuration(void) {
   * @retval None
   ***********************************************************************************************************/
 void GPIO_Configuration(void) {
+	{ /* Enable peripheral clock                                                                              */
+		CKCU_PeripClockConfig_TypeDef CKCUClock = {{ 0 }};
+		CKCUClock.Bit.PA = 1;
+		CKCUClock.Bit.PB = 1;
+		CKCUClock.Bit.PC = 1;
+		CKCUClock.Bit.PD = 1;
+		CKCU_PeripClockConfig(CKCUClock, ENABLE);
+	}
 	
-	GPIO_DirectionConfig(HT_GPIOC, GPIO_PIN_0,  GPIO_DIR_IN);
+	GPIO_DirectionConfig(HT_GPIOC, GPIO_PIN_0, GPIO_DIR_IN);
 	GPIO_InputConfig(HT_GPIOC, GPIO_PIN_0, ENABLE);
 	
 	#if (RETARGET_PORT == RETARGET_USART0)
@@ -304,6 +324,12 @@ void GPIO_Configuration(void) {
   ***********************************************************************************************************/
 void I2C_Configuration(void) {
 	I2C_InitTypeDef I2C_InitStructure = { 0 };
+	
+	{ /* Enable peripheral clock                                                                              */
+		CKCU_PeripClockConfig_TypeDef CKCUClock = {{ 0 }};
+		CKCUClock.Bit.I2C1 = 1;
+		CKCU_PeripClockConfig(CKCUClock, ENABLE);
+	}
 
 	/* Configure I2C SCL pin, I2C SDA pin                                                                     */
 	AFIO_GPxConfig(GPIO_PA, AFIO_PIN_0, AFIO_FUN_I2C);
@@ -342,37 +368,16 @@ void get_TKLR(void) {
 	}
 }
 
-void GPTM0_IRQHandler(void) {
-	TM_ClearFlag(HT_GPTM0, TM_FLAG_UEV);
-	
-	if (TK_CHECK) {
-		if (TK_R - TK_L > 2) {
-			status = zoom;
-			TK_1SEC = FALSE;
-		} else if (TK_R - TK_L <= 2) {
-			status = slide;
-		}
-		
-	}
-	if (TK_1SEC && status != none) {
-		if (TK_COUNT >= (2 * 500)) {
-			TK_1SEC = FALSE;
-		} else {
-			TK_COUNT += 1;
-		}
-	}
-}
-
 void Slide(u32 L, u32 R, u8 *Value) {
 	static u32 prevL = 0, prevR = 0;
 	
 	if (L != prevL || R != prevR) {
 		if (L < prevL || R < prevR) {
 			if (*Value <= 0) *Value = 0;
-			else (*Value) -= 1;
+			else (*Value) -= 3;
 		} else if (L > prevL || R > prevR) {
-			if (*Value >= 100) *Value = 100;
-			else (*Value) += 1;
+			if (*Value >= 30) *Value = 30;
+			else (*Value) += 3;
 		}
 		prevL = L;
 		prevR = R;
@@ -384,11 +389,11 @@ void Zoom(u32 L, u32 R, u8* Value) {
 	
 	if (L != prevL || R != prevR) {
 		if (L > prevL || R < prevR) {
-			if (*Value <= 0) *Value = 0;
-			else (*Value) -= 1;
+			if (*Value <= 2) *Value = 2;
+			else (*Value) -= 2;
 		} else if (L < prevL || R > prevR) {
-			if (*Value >= 32) *Value = 32;
-			else (*Value) += 1;
+			if (*Value >= 8) *Value = 8;
+			else (*Value) += 2;
 		}
 		prevL = L;
 		prevR = R;

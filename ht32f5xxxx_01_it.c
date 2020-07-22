@@ -27,6 +27,7 @@
 
 /* Includes ------------------------------------------------------------------------------------------------*/
 #include "ht32.h"
+#include "ws2812.h"
 
 /** @addtogroup HT32_Series_Peripheral_Examples HT32 Peripheral Examples
   * @{
@@ -46,70 +47,92 @@
  * @brief   This function handles NMI exception.
  * @retval  None
  ************************************************************************************************************/
-void NMI_Handler(void)
-{
+void NMI_Handler(void) {
 }
 
 /*********************************************************************************************************//**
  * @brief   This function handles Hard Fault exception.
  * @retval  None
  ************************************************************************************************************/
-void HardFault_Handler(void)
-{
-  #if 1
+void HardFault_Handler(void) {
+	#if 1
 
-  static vu32 gIsContinue = 0;
-  /*--------------------------------------------------------------------------------------------------------*/
-  /* For development FW, MCU run into the while loop when the hardfault occurred.                           */
-  /* 1. Stack Checking                                                                                      */
-  /*    When a hard fault exception occurs, MCU push following register into the stack (main or process     */
-  /*    stack). Confirm R13(SP) value in the Register Window and typing it to the Memory Windows, you can   */
-  /*    check following register, especially the PC value (indicate the last instruction before hard fault).*/
-  /*    SP + 0x00    0x04    0x08    0x0C    0x10    0x14    0x18    0x1C                                   */
-  /*           R0      R1      R2      R3     R12      LR      PC    xPSR                                   */
-  while (gIsContinue == 0)
-  {
-  }
-  /* 2. Step Out to Find the Clue                                                                           */
-  /*    Change the variable "gIsContinue" to any other value than zero in a Local or Watch Window, then     */
-  /*    step out the HardFault_Handler to reach the first instruction after the instruction which caused    */
-  /*    the hard fault.                                                                                     */
-  /*--------------------------------------------------------------------------------------------------------*/
+	static vu32 gIsContinue = 0;
+	/*--------------------------------------------------------------------------------------------------------*/
+	/* For development FW, MCU run into the while loop when the hardfault occurred.                           */
+	/* 1. Stack Checking                                                                                      */
+	/*    When a hard fault exception occurs, MCU push following register into the stack (main or process     */
+	/*    stack). Confirm R13(SP) value in the Register Window and typing it to the Memory Windows, you can   */
+	/*    check following register, especially the PC value (indicate the last instruction before hard fault).*/
+	/*    SP + 0x00    0x04    0x08    0x0C    0x10    0x14    0x18    0x1C                                   */
+	/*           R0      R1      R2      R3     R12      LR      PC    xPSR                                   */
+	while (gIsContinue == 0) {
+	}
+	/* 2. Step Out to Find the Clue                                                                           */
+	/*    Change the variable "gIsContinue" to any other value than zero in a Local or Watch Window, then     */
+	/*    step out the HardFault_Handler to reach the first instruction after the instruction which caused    */
+	/*    the hard fault.                                                                                     */
+	/*--------------------------------------------------------------------------------------------------------*/
 
-  #else
+	#else
 
-  /*--------------------------------------------------------------------------------------------------------*/
-  /* For production FW, you shall consider to reboot the system when hardfault occurred.                    */
-  /*--------------------------------------------------------------------------------------------------------*/
-  NVIC_SystemReset();
+	/*--------------------------------------------------------------------------------------------------------*/
+	/* For production FW, you shall consider to reboot the system when hardfault occurred.                    */
+	/*--------------------------------------------------------------------------------------------------------*/
+	NVIC_SystemReset();
 
-  #endif
+	#endif
 }
 
 /*********************************************************************************************************//**
  * @brief   This function handles SVCall exception.
  * @retval  None
  ************************************************************************************************************/
-void SVC_Handler(void)
-{
+void SVC_Handler(void) {
 }
 
 /*********************************************************************************************************//**
  * @brief   This function handles PendSVC exception.
  * @retval  None
  ************************************************************************************************************/
-void PendSV_Handler(void)
-{
+void PendSV_Handler(void) {
 }
 
 /*********************************************************************************************************//**
  * @brief   This function handles SysTick Handler.
  * @retval  None
  ************************************************************************************************************/
-void SysTick_Handler(void)
-{
+void SysTick_Handler(void) {
 }
 
+extern u8 status;
+extern const u8 zoom, slide, press, none;
+
+extern bool TK_CHECK, TK_1SEC;
+extern u8 TK_L, TK_R;
+extern u16 TK_COUNT;
+void GPTM1_IRQHandler(void) {
+	extern u16 i;
+	i = 0;
+	TM_ClearFlag(HT_GPTM1, TM_FLAG_UEV);
+	wsShow();
+	if (TK_CHECK) {
+		if (TK_R - TK_L > 2) {
+			status = zoom;
+			TK_1SEC = FALSE;
+		} else if (TK_R - TK_L <= 2) {
+			status = slide;
+		}
+		
+	}
+	if (TK_1SEC && status != none) {
+		if (TK_COUNT >= (2 * 500)) {
+			TK_1SEC = FALSE;
+		} else {
+			TK_COUNT += 1;
+		}
+	}
+}
 /**
   * @}
   */
